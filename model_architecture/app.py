@@ -11,51 +11,47 @@ from tensorflow.keras.models import load_model
 
 st.set_option('deprecation.showfileUploaderEncoding', False)
 
-def args_parser():
-    parser = argparse.ArgumentParser(
-        description="Datature Open Source Prediction Script")
-    parser.add_argument(
-        "--input",
-        help="Path to folder that contains input images",
-        required=True,
-    )
-    parser.add_argument(
-        "--output",
-        help="Path to folder to store predicted images",
-        required=True,
-    )
-    parser.add_argument(
-        "--model",
-        help="Path to tensorflow pb model",
-        required=True,
-		default='../saved_model'
-    )
-    parser.add_argument(
-        "--label",
-        help="Path to tensorflow label map",
-        required=True,
-		default="../label_map.pbtxt"
-    )
-    parser.add_argument("--width",
-                        help="Width of image to load into model",
-                        default=640)
-    parser.add_argument("--height",
-                        help="Height of image to load into model",
-                        default=640)
-    parser.add_argument("--threshold",
-                        help="Prediction confidence threshold",
-                        default=0.7)
+# def args_parser():
+#     parser = argparse.ArgumentParser(
+#         description="Datature Open Source Prediction Script")
+#     parser.add_argument(
+#         "--input",
+#         help="../input",
+#         required=True,
+# 		default="../input/"
+#     )
+#     parser.add_argument(
+#         "--output",
+#         help="../output",
+#         required=True,
+# 		default="../output/",
+#     )
+#     parser.add_argument(
+#         "--model",
+#         help="../saved_model/",
+#         required=True,
+# 		default="../saved_model",
+#     )
+#     parser.add_argument(
+#         "--label",
+#         help="../label_map.pbtxt",
+#         required=True,
+# 		default="../label_map.pbtxt",
+#     )
+#     parser.add_argument("--width",
+#                         help=640,
+#                         default=640)
+#     parser.add_argument("--height",
+#                         help=640,
+#                         default=640)
+#     parser.add_argument("--threshold",
+#                         help=0.7,
+#                         default=0.7)
 
-    return parser.parse_args()
+#     return parser.parse_args()
 
 def load_label_map(label_map_path):
-    """
-    Reads label map in the format of .pbtxt and parse into dictionary
-    Args:
-      label_map_path: the file path to the label_map
-    Returns:
-      dictionary with the format of {label_index: {'id': label_index, 'name': label_name}}
-    """
+
     label_map = {}
 
     with open(label_map_path, "r") as label_file:
@@ -76,7 +72,7 @@ def plot_boxes_on_img(color_map, classes, bboxes, image_origi, origi_shape):
 	for idx, each_bbox in enumerate(bboxes):
 		color = color_map[classes[idx]]
 
-		## Draw bounding box
+		
 		cv2.rectangle(
 			image_origi,
 			(int(each_bbox[1] * origi_shape[1]),
@@ -86,7 +82,7 @@ def plot_boxes_on_img(color_map, classes, bboxes, image_origi, origi_shape):
 			color,
 			2,
 		)
-		## Draw label background
+		
 		cv2.rectangle(
 			image_origi,
 			(int(each_bbox[1] * origi_shape[1]),
@@ -113,19 +109,33 @@ def plot_boxes_on_img(color_map, classes, bboxes, image_origi, origi_shape):
 		)
 	return image_origi
 
-@st.cache(allow_output_mutation=True)
+@st.cache_resource
 def load_model(model_path):
 	return tf.saved_model.load(model_path)
+st.markdown(
+    """
+    <style>
+    .sidebar .sidebar-content {
+        background-color: #0077b6;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
-st.title('Web App to detect Breast Cancer')
+st.set_option('deprecation.showfileUploaderEncoding', False)
+
+st.image('../breast_cancer.jpeg')
+
+st.title('Breast Cancer Detection From UTRASOUND IMAGES')
 
 file = st.sidebar.file_uploader("Choose image to evaluate model", type=["jpg", "png"])
 
 button = st.sidebar.button('Detect Breast Cancer!')
 
-args = args_parser()
+# args = args_parser()
 
-model = load_model(args.model)
+model = load_model("../saved_model")
 
 if  button and file: 
 
@@ -134,10 +144,10 @@ if  button and file:
 	test_image = Image.open(file).convert("RGB")
 	origi_shape = np.asarray(test_image).shape
 	# resize image to default shape
-	image_resized = np.array(test_image.resize((args.width, args.height)))
+	image_resized = np.array(test_image.resize((640, 640)))
 
 	## Load color map
-	category_index = load_label_map(args.label)
+	category_index = load_label_map("../label_map.pbtxt")
 
 	# TODO Add more colors if there are more classes
   # color of each label. check label_map.pbtxt to check the index for each class
@@ -153,6 +163,7 @@ if  button and file:
 
 	## Feed image into model and obtain output
 	detections_output = model(input_tensor)
+	# print("model output",detections_output)
 	num_detections = int(detections_output.pop("num_detections"))
 	detections = {key: value[0, :num_detections].numpy() for key, value in detections_output.items()}
 	detections["num_detections"] = num_detections
@@ -160,7 +171,7 @@ if  button and file:
 	## Filter out predictions below threshold
 	# if threshold is higher, there will be fewer predictions
 	# TODO change this number to see how the predictions change
-	indexes = np.where(detections["detection_scores"] > args.threshold)
+	indexes = np.where(detections["detection_scores"] > 0.2)
 
 	## Extract predicted bounding boxes
 	bboxes = detections["detection_boxes"][indexes]
@@ -169,16 +180,27 @@ if  button and file:
 		st.error('No boxes predicted')
 	# there are predicted boxes
 	else:
-		st.success('Boxes predicted')
+		st.success('Image detected')
+		print("This is the length", len(bboxes))
 		classes = detections["detection_classes"][indexes].astype(np.int64)
 		scores = detections["detection_scores"][indexes]
+		print("This are tge clasess",category_index[classes[0]]['name'])
+		# print("This are tge clasess",category_index[classes[1]]['name'])
+		print("This are the score", scores)
 
 		# plot boxes and labels on image
 		image_origi = np.array(Image.fromarray(image_resized).resize((origi_shape[1], origi_shape[0])))
 		image_origi = plot_boxes_on_img(color_map, classes, bboxes, image_origi, origi_shape)
 
 		# show image in web page
-		st.image(Image.fromarray(image_origi), caption="Image with predictions", width=400)
-		st.markdown("### Predicted boxes")
+		st.image(Image.fromarray(image_resized), caption="Image with predictions", width=400)
+		st.markdown("### Model output")
+		class_detected =[]
 		for idx in range(len((bboxes))):
-			st.markdown(f"* Class: {str(category_index[classes[idx]]['name'])}, confidence score: {str(round(scores[idx], 2))}")
+			class_detected.append(category_index[classes[idx]]['name'])
+			# st.markdown(f"* Class: {str(category_index[classes[idx]]['name'])}, confidence score: {str(round(scores[idx], 2))}")
+		
+		if("benign" in class_detected and "benign"==class_detected[0]):
+			st.success(" Image contain a Benign tumor which is not cancerous.")
+		else:
+			st.error("Image contain a malignant tumor which is cancerous.")
