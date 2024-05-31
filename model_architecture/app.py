@@ -1,3 +1,5 @@
+from datetime import datetime
+import os
 import cv2
 import numpy as np
 from PIL import Image
@@ -6,8 +8,49 @@ import argparse
 import tensorflow as tf
 from tensorflow.keras.models import load_model
 
+from tortoise import Tortoise, fields, models
+import asyncio
+
 # most of this code has been obtained from Datature's prediction script
 # https://github.com/datature/resources/blob/main/scripts/bounding_box/prediction.py
+
+class ImagePrediction(models.Model):
+    id = fields.IntField(pk=True)
+    uploaded_image_path = fields.CharField(max_length=255)
+    output_image_path = fields.CharField(max_length=255)
+    class_detected = fields.CharField(max_length=255)
+    score = fields.FloatField()
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+async def init():
+    await Tortoise.init(
+        db_url='sqlite://database.sqlite3',
+        modules={'models': ['__main__']}
+    )
+    await Tortoise.generate_schemas()
+
+asyncio.run(init())
+
+# Function to save prediction to the database
+async def save_prediction(uploaded_image_path, output_image_path, class_detected, score):
+    print("Saving prediction to the database", uploaded_image_path)
+    prediction = await ImagePrediction.create(
+        uploaded_image_path=uploaded_image_path,
+        output_image_path=output_image_path,
+        class_detected=class_detected,
+        score=score
+    )
+    return prediction
+
+def save_image(image, folder="images", prefix="image"):
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"{prefix}_{timestamp}.png"
+    path = os.path.join(folder, filename)
+    image.save(path)
+    return path
+
 
 st.set_option('deprecation.showfileUploaderEncoding', False)
 
@@ -137,7 +180,7 @@ button = st.sidebar.button('Detect Breast Cancer!')
 
 model = load_model("../saved_model")
 
-if  button and file: 
+if  button and file:
 
 	st.text('Running inference...')
 	# open image
@@ -146,6 +189,9 @@ if  button and file:
 	# resize image to default shape
 	image_resized = np.array(test_image.resize((640, 640)))
 
+	# Save the uploaded image
+	uploaded_image_path = save_image(test_image, prefix="uploaded")
+    
 	## Load color map
 	category_index = load_label_map("../label_map.pbtxt")
 
@@ -192,6 +238,9 @@ if  button and file:
 		image_origi = np.array(Image.fromarray(image_resized).resize((origi_shape[1], origi_shape[0])))
 		image_origi = plot_boxes_on_img(color_map, classes, bboxes, image_origi, origi_shape)
 
+		output_image = Image.fromarray(image_origi)
+		output_image_path = save_image(output_image, prefix="output")
+
 		# show image in web page
 		st.image(Image.fromarray(image_resized), caption="Image with predictions", width=400)
 		st.markdown("### Model output")
@@ -204,3 +253,6 @@ if  button and file:
 			st.success(" Image contain a Benign tumor which is not cancerous.")
 		else:
 			st.error("Image contain a malignant tumor which is cancerous.")
+   
+		# Save prediction to the database
+		asyncio.run(save_prediction(uploaded_image_path, output_image_path, class_detected[0], float(scores[0])))
