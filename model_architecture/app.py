@@ -1,3 +1,4 @@
+from pathlib import Path
 from datetime import datetime
 import os
 import cv2
@@ -14,13 +15,23 @@ import asyncio
 # most of this code has been obtained from Datature's prediction script
 # https://github.com/datature/resources/blob/main/scripts/bounding_box/prediction.py
 
+BASE_DIR = Path(__file__).resolve().parent.parent
+
 class ImagePrediction(models.Model):
     id = fields.IntField(pk=True)
+    first_name = fields.CharField(max_length=255)
+    last_name = fields.CharField(max_length=255)
+    age = fields.IntField()
+    history_of_cancer = fields.BooleanField()
+    family_history_of_cancer = fields.BooleanField()
     uploaded_image_path = fields.CharField(max_length=255)
     output_image_path = fields.CharField(max_length=255)
     class_detected = fields.CharField(max_length=255)
     score = fields.FloatField()
     created_at = fields.DatetimeField(auto_now_add=True)
+
+
+# Function to initialize the database
 
 async def init():
     await Tortoise.init(
@@ -32,13 +43,17 @@ async def init():
 asyncio.run(init())
 
 # Function to save prediction to the database
-async def save_prediction(uploaded_image_path, output_image_path, class_detected, score):
-    print("Saving prediction to the database", uploaded_image_path)
+async def save_prediction(uploaded_image_path, output_image_path, class_detected, score, first_name, last_name, age, history_of_cancer, family_history_of_cancer):
     prediction = await ImagePrediction.create(
+        first_name=first_name,
+        last_name=last_name,
+        age=age,
+        history_of_cancer=history_of_cancer,
+        family_history_of_cancer=family_history_of_cancer,
         uploaded_image_path=uploaded_image_path,
         output_image_path=output_image_path,
         class_detected=class_detected,
-        score=score
+        score=score,
     )
     return prediction
 
@@ -54,44 +69,44 @@ def save_image(image, folder="images", prefix="image"):
 
 st.set_option('deprecation.showfileUploaderEncoding', False)
 
-# def args_parser():
-#     parser = argparse.ArgumentParser(
-#         description="Datature Open Source Prediction Script")
-#     parser.add_argument(
-#         "--input",
-#         help="../input",
-#         required=True,
-# 		default="../input/"
-#     )
-#     parser.add_argument(
-#         "--output",
-#         help="../output",
-#         required=True,
-# 		default="../output/",
-#     )
-#     parser.add_argument(
-#         "--model",
-#         help="../saved_model/",
-#         required=True,
-# 		default="../saved_model",
-#     )
-#     parser.add_argument(
-#         "--label",
-#         help="../label_map.pbtxt",
-#         required=True,
-# 		default="../label_map.pbtxt",
-#     )
-#     parser.add_argument("--width",
-#                         help=640,
-#                         default=640)
-#     parser.add_argument("--height",
-#                         help=640,
-#                         default=640)
-#     parser.add_argument("--threshold",
-#                         help=0.7,
-#                         default=0.7)
+def args_parser():
+    parser = argparse.ArgumentParser(
+        description="Datature Open Source Prediction Script")
+    parser.add_argument(
+        "--input",
+        help="../input",
+        required=True,
+		default="../input/"
+    )
+    parser.add_argument(
+        "--output",
+        help="../output",
+        required=True,
+		default="../output/",
+    )
+    parser.add_argument(
+        "--model",
+        help="../saved_model/",
+        required=True,
+		default="../saved_model",
+    )
+    parser.add_argument(
+        "--label",
+        help="../label_map.pbtxt",
+        required=True,
+		default="../label_map.pbtxt",
+    )
+    parser.add_argument("--width",
+                        help=640,
+                        default=640)
+    parser.add_argument("--height",
+                        help=640,
+                        default=640)
+    parser.add_argument("--threshold",
+                        help=0.7,
+                        default=0.7)
 
-#     return parser.parse_args()
+    return parser.parse_args()
 
 def load_label_map(label_map_path):
 
@@ -168,21 +183,30 @@ st.markdown(
 
 st.set_option('deprecation.showfileUploaderEncoding', False)
 
-st.image('../breast_cancer.jpeg')
+img = os.path.join(BASE_DIR, "breast_cancer.jpeg")
+st.image(img)
 
 st.title('Breast Cancer Detection From UTRASOUND IMAGES')
 
-file = st.sidebar.file_uploader("Choose image to evaluate model", type=["jpg", "png"])
+st.write('Fill the form below to predict if the patient has breast cancer or not.')
 
-button = st.sidebar.button('Detect Breast Cancer!')
+
+first_name = st.text_input("First Name")
+last_name = st.text_input("Last Name")
+age = st.number_input("Age", step=1)
+history_of_cancer = st.checkbox("History of Cancer")
+family_history_of_cancer = st.checkbox("Having History of Cancer in Family")
+file = st.file_uploader("Choose image to evaluate model", type=["jpg", "png"])
+
+button = st.button('Detect Breast Cancer!')
 
 # args = args_parser()
 
-model = load_model("../saved_model")
+model = load_model(os.path.join(BASE_DIR, "saved_model"))
 
 if  button and file:
 
-	st.text('Running inference...')
+	st.text('Detecting Breast Cancer...')
 	# open image
 	test_image = Image.open(file).convert("RGB")
 	origi_shape = np.asarray(test_image).shape
@@ -193,7 +217,8 @@ if  button and file:
 	uploaded_image_path = save_image(test_image, prefix="uploaded")
     
 	## Load color map
-	category_index = load_label_map("../label_map.pbtxt")
+	label_map = os.path.join(BASE_DIR, "label_map.pbtxt")
+	category_index = load_model(label_map)
 
 	# TODO Add more colors if there are more classes
   # color of each label. check label_map.pbtxt to check the index for each class
@@ -255,4 +280,4 @@ if  button and file:
 			st.error("Image contain a malignant tumor which is cancerous.")
    
 		# Save prediction to the database
-		asyncio.run(save_prediction(uploaded_image_path, output_image_path, class_detected[0], float(scores[0])))
+		asyncio.run(save_prediction(uploaded_image_path, output_image_path, class_detected[0], float(scores[0]), first_name, last_name, age, history_of_cancer, family_history_of_cancer))

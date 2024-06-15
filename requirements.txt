@@ -55,6 +55,7 @@ termcolor==2.4.0
 toml==0.10.2
 toolz==0.12.1
 tornado==6.4
+tortoise-orm==0.20.1
 typing_extensions==4.11.0
 tzdata==2024.1
 urllib3==2.2.1
